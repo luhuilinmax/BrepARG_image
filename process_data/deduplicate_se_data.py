@@ -26,13 +26,13 @@ def real2bit(data, n_bits=6, min_range=-1, max_range=1):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Deduplicate NCS surfaces or edges from the training data"
+        description="Deduplicate NCS surfaces or edges from pkl inputs"
     )
     parser.add_argument(
         "--data_list",
         type=str,
         default="data/abc_data_split_6bit.pkl",
-        help="Pickle file containing train/test path lists",
+        help="Input pkl: split pkl, path-list pkl, or single sample pkl",
     )
     parser.add_argument(
         "--mode",
@@ -62,13 +62,24 @@ def main():
     )
     args = parser.parse_args()
 
-    # 读取数据列表
+    # 读取输入并解析待处理路径
     print(f"Loading data list from {args.data_list}...")
     with open(args.data_list, "rb") as f:
         dataset = pickle.load(f)
 
-    pkl_files = dataset["train"]
-    print(f"Found {len(pkl_files)} training files")
+    if isinstance(dataset, dict) and "train" in dataset and isinstance(dataset["train"], list):
+        pkl_files = dataset["train"]
+        print(f"Detected split pkl, found {len(pkl_files)} train files")
+    elif isinstance(dataset, list):
+        pkl_files = dataset
+        print(f"Detected path-list pkl, found {len(pkl_files)} files")
+    elif isinstance(dataset, dict) and ("surf_ncs" in dataset or "edge_ncs" in dataset):
+        pkl_files = [args.data_list]
+        print("Detected single-sample pkl, processing this file directly")
+    else:
+        raise ValueError(
+            "Unsupported input pkl format. Expected split pkl, path-list pkl, or single sample pkl."
+        )
 
     # 根据 mode 选择键
     key = "edge_ncs" if args.mode == "edge" else "surf_ncs"
@@ -121,7 +132,9 @@ def main():
             out_path = f"data/{args.dataset_type}_parsed_unique_surfaces.pkl"
 
     # 一次性保存
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    out_dir = os.path.dirname(out_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     with open(out_path, "wb") as f:
         pickle.dump(unique_data, f)
 

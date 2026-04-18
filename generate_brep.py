@@ -20,6 +20,31 @@ from utils import (
 )
 
 
+def dump_debug_artifacts(
+    debug_dir: str,
+    filename_prefix: str,
+    sequence: List[int],
+    debug_payload: Optional[Dict[str, Any]] = None
+) -> None:
+    os.makedirs(debug_dir, exist_ok=True)
+    timestamp = f"{int(time.time())}_{int((time.time() % 1) * 1000000):06d}"
+    base_name = f"{filename_prefix}_{timestamp}"
+
+    seq_json_path = os.path.join(debug_dir, f"{base_name}_sequence.json")
+    seq_txt_path = os.path.join(debug_dir, f"{base_name}_sequence.txt")
+    with open(seq_json_path, "w", encoding="utf-8") as f:
+        json.dump(sequence, f)
+    with open(seq_txt_path, "w", encoding="utf-8") as f:
+        f.write(" ".join(map(str, sequence)))
+
+    if debug_payload is not None:
+        payload_path = os.path.join(debug_dir, f"{base_name}_debug.pkl")
+        with open(payload_path, "wb") as f:
+            pickle.dump(debug_payload, f)
+
+    print(f"Debug artifacts saved under: {debug_dir}")
+
+
 def load_config(config_path: str) -> Dict[str, Any]:
     """
     Load JSON config for generation script.
@@ -172,7 +197,7 @@ def load_checkpoint(model_path: str) -> Dict:
         raise FileNotFoundError(f"Model file not found: {model_path}")
     
     try:
-        checkpoint = torch.load(model_path, map_location='cpu')
+        checkpoint = torch.load(model_path, map_location='cpu', weights_only=False)
         print(f"Successfully loaded checkpoint: {model_path}")
         return checkpoint
     except Exception as e:
@@ -402,6 +427,8 @@ def generate_and_reconstruct_single(
     save_step: bool = True,
     output_dir: str = "result/generated_brep",
     filename_prefix: str = "generated",
+    dump_debug: bool = False,
+    debug_dir: str = "result/debug",
     silent: bool = False,
     write_timeout: int = 30
 ) -> Dict[str, Any]:
@@ -467,14 +494,26 @@ def generate_and_reconstruct_single(
         # 2) BREP reconstruction
         if not silent:
             print("2. Reconstructing BREP model...")
-        solid = reconstruct_cad_from_sequence(
+        recon_output = reconstruct_cad_from_sequence(
             sequence=sequence,
             vocab_info=vocab_info,
             se_vqvae_model=se_vqvae_model,
             device=device,
             scale_factor=scale_factor,
-            verbose=False
+            verbose=False,
+            return_debug=dump_debug
         )
+        if dump_debug:
+            solid, debug_payload = recon_output
+            dump_debug_artifacts(
+                debug_dir=debug_dir,
+                filename_prefix=filename_prefix,
+                sequence=sequence,
+                debug_payload=debug_payload,
+            )
+        else:
+            solid = recon_output
+
         if solid is None:
             result['error'] = "BREP reconstruction failed"
             return result
@@ -555,6 +594,8 @@ def generate_and_reconstruct_batch(
     save_step: bool = True,
     output_dir: str = "result/generated_brep",
     filename_prefix: str = "generated",
+    dump_debug: bool = False,
+    debug_dir: str = "result/debug",
     write_timeout: int = 30
 ) -> Dict[str, Any]:
     """
@@ -585,6 +626,8 @@ def generate_and_reconstruct_batch(
                 save_step=save_step,
                 output_dir=output_dir,
                 filename_prefix=f"{filename_prefix}_{saved_count:04d}",
+                dump_debug=dump_debug,
+                debug_dir=debug_dir,
                 silent=True,
                 write_timeout=write_timeout
             )
@@ -637,6 +680,8 @@ def main():
     parser.add_argument("--output_dir", type=str, default="result/generated_brep/final_test", help="Output directory")
     parser.add_argument("--no_save_step", default=False, help="Disable STEP file saving")
     parser.add_argument("--filename_prefix", type=str, default="deepcad", help="Output filename prefix")
+    parser.add_argument("--dump_debug", action="store_true", help="Dump sequence/cad/joint-opt intermediate artifacts")
+    parser.add_argument("--debug_dir", type=str, default="result/debug", help="Directory for debug artifacts")
     
     # Other arguments
     parser.add_argument("--device", type=str, default='cuda', help="Compute device (cuda/cpu)")
@@ -713,6 +758,8 @@ def main():
                 save_step=not args.no_save_step,
                 output_dir=args.output_dir,
                 filename_prefix=args.filename_prefix,
+                dump_debug=args.dump_debug,
+                debug_dir=args.debug_dir,
                 write_timeout=args.write_timeout
             )
             
@@ -740,6 +787,8 @@ def main():
                 save_step=not args.no_save_step,
                 output_dir=args.output_dir,
                 filename_prefix=args.filename_prefix,
+                dump_debug=args.dump_debug,
+                debug_dir=args.debug_dir,
                 write_timeout=args.write_timeout
             )
             

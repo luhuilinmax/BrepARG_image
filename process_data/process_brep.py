@@ -1,16 +1,73 @@
-from ast import arg
 import os 
 import pickle 
 import argparse
+import numpy as np
 from tqdm import tqdm
 from multiprocessing.pool import Pool
 from convert_utils import *
-from occwl.io import load_step
+from occwl.io import load_step as load_solids_from_step
 import shutup; shutup.please()
 
 
 # To speed up processing, define maximum threshold
 MAX_FACE = 200
+
+
+def dump_data_dict_inspection(data, report_path, max_preview_elements=128):
+    """
+    将组装的 data 字典写成文本：每个 key 的名称、类型、维度/长度、dtype，
+    以及数值预览（小数组全文，大数组统计量 + 前若干元素）。
+    """
+    lines = []
+
+    def append_array(name, arr):
+        lines.append(f"  shape: {arr.shape}")
+        lines.append(f"  dtype: {arr.dtype}")
+        flat = np.ravel(arr)
+        n = flat.size
+        if n == 0:
+            lines.append("  values: (empty)")
+            return
+        if np.issubdtype(arr.dtype, np.floating) or np.issubdtype(arr.dtype, np.integer):
+            fi = flat.astype(np.float64) if np.issubdtype(arr.dtype, np.floating) else flat.astype(np.int64)
+            lines.append(f"  min: {fi.min()}, max: {fi.max()}")
+            if np.issubdtype(arr.dtype, np.floating):
+                lines.append(f"  mean: {float(fi.mean())}")
+        if n <= max_preview_elements:
+            lines.append(f"  values (full):\n{np.array2string(arr, threshold=np.inf, max_line_width=120)}")
+        else:
+            prev = flat[:max_preview_elements]
+            lines.append(
+                f"  values (preview, first {max_preview_elements} elements raveled): {prev}"
+            )
+
+    for key, val in data.items():
+        lines.append("=" * 72)
+        lines.append(f"key: {key}")
+        lines.append(f"type: {type(val).__name__}")
+        if isinstance(val, np.ndarray):
+            append_array(key, val)
+        elif isinstance(val, (list, tuple)):
+            lines.append(f"  len: {len(val)}")
+            if len(val) == 0:
+                lines.append("  values: (empty sequence)")
+            else:
+                first = val[0]
+                lines.append(f"  elem[0] type: {type(first).__name__}")
+                if len(val) <= 32:
+                    lines.append(f"  values (full): {val}")
+                else:
+                    lines.append(f"  values (first 32): {list(val[:32])} ...")
+        else:
+            s = repr(val)
+            lines.append(f"  repr: {s if len(s) <= 2000 else s[:2000] + '...<truncated>'}")
+        lines.append("")
+
+    os.makedirs(os.path.dirname(report_path) or ".", exist_ok=True)
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+    print(f"[inspect] wrote {report_path}")
+
 
 def normalize(surf_pnts, edge_pnts, corner_pnts):
     """
@@ -84,10 +141,13 @@ def parse_solid(solid):
         return None
         
     # Extract all B-rep primitives and their adjacency information
+    #import pdb; pdb.set_trace()
     face_pnts, edge_pnts, edge_corner_pnts, edgeFace_IncM, faceEdge_IncM = extract_primitive(solid)
+    #import pdb; pdb.set_trace()
     
     # Normalize the CAD model
     surfs_wcs, edges_wcs, surfs_ncs, edges_ncs, corner_wcs = normalize(face_pnts, edge_pnts, edge_corner_pnts)
+    #import pdb; pdb.set_trace()
 
     # Remove duplicate and merge corners 
     corner_wcs = np.round(corner_wcs,4) 
@@ -144,7 +204,7 @@ def parse_solid(solid):
 
 
 def process(args):
-    step_folder, OUTPUT, INPUT_ROOT = args
+    step_folder, OUTPUT, INPUT_ROOT, inspect = args
     try:
         # Load cad data
         if step_folder.endswith('.step'):
@@ -155,10 +215,13 @@ def process(args):
                 step_path = os.path.join(step_folder, files[0])
 
         # Check single solid
-        cad_solid = load_step(step_path)
+        #print("ABOUT TO PDB", flush=True)
+        #import pdb; pdb.set_trace()
+        cad_solid = load_solids_from_step(step_path)
         if len(cad_solid)!=1: 
             return 0 
         # Start data parsing
+        #import pdb; pdb.set_trace()
         data = parse_solid(cad_solid[0])
         if data is None: 
             return 0
@@ -179,6 +242,9 @@ def process(args):
         save_path = os.path.join(OUTPUT, base_name + '.pkl')
         with open(save_path, "wb") as tf:
             pickle.dump(data, tf)
+        if inspect:
+            inspect_path = os.path.join(OUTPUT, base_name + '_data_inspect.txt')
+            dump_data_dict_inspection(data, inspect_path)
         return 1 
     except Exception as e:
         return 0
@@ -188,6 +254,11 @@ if __name__ == '__main__':
     parser.add_argument("--input", type=str, help="Data folder path", default='')
     parser.add_argument("--output", type=str, help="Output folder path", default='data/deepcad_parsed')
     parser.add_argument("--interval", type=int, default=0, help="Data range index, only required for abc/deepcad")
+    parser.add_argument(
+        "--inspect",
+        action="store_true",
+        help="Also write <stem>_data_inspect.txt (keys, shapes, dtypes, stats, value preview) next to each .pkl",
+    )
     args = parser.parse_args()
     
 
@@ -196,12 +267,17 @@ if __name__ == '__main__':
     step_dirs = load_step(args.input)
 
 
-    # Process B-reps in parallel
+    # # Process B-reps in parallel
+    # valid = 0
+    # # Pass (file_path, OUTPUT, INPUT_ROOT) tuples to each process
+    # convert_iter = Pool(os.cpu_count()).imap(process, [(step_dir, OUTPUT, args.input, args.inspect) for step_dir in step_dirs]) 
+    # for status in tqdm(convert_iter, total=len(step_dirs)):
+    #     valid += status 
+    # print(f'Done... Data Converted Ratio {100.0*valid/len(step_dirs)}%')
+
+    # Process B-reps in single process (debug-friendly)
     valid = 0
-    # Pass (file_path, OUTPUT, INPUT_ROOT) tuples to each process
-    convert_iter = Pool(os.cpu_count()).imap(process, [(step_dir, OUTPUT, args.input) for step_dir in step_dirs]) 
-    for status in tqdm(convert_iter, total=len(step_dirs)):
-        valid += status 
+    for step_dir in tqdm(step_dirs, total=len(step_dirs)):
+        status = process((step_dir, OUTPUT, args.input, args.inspect))
+        valid += status
     print(f'Done... Data Converted Ratio {100.0*valid/len(step_dirs)}%')
-
-

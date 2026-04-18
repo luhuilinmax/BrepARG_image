@@ -117,6 +117,16 @@ class VQVAETrainer():
         in_channels = 4 if self.use_type_flag else 3
         out_channels = 3  # Output is always 3-channel coordinates
 
+        # Set codebook size according to dataset type (aligned with paper setting)
+        dataset_type = getattr(args, "dataset_type", "deepcad")
+        if dataset_type == "abc":
+            num_vq_embeddings = 8192
+        else:
+            num_vq_embeddings = 4096
+
+        if self.rank == 0:
+            print(f"VQ-VAE config: dataset_type={dataset_type}, codebook_size={num_vq_embeddings}")
+
         self.model = VQVAE(
             in_channels=in_channels,  # Set input channels based on flag
             out_channels=out_channels,
@@ -127,7 +137,7 @@ class VQVAETrainer():
             act_fn='silu',
             latent_channels=128,
             vq_embed_dim=64,
-            num_vq_embeddings=4096,
+            num_vq_embeddings=num_vq_embeddings,
             norm_num_groups=32,
             sample_size=512,
         ).to(self.device)
@@ -429,13 +439,13 @@ class VQVAETrainer():
             self.writer.add_scalar('val/perplexity', avg_perplexity, val_epoch)
             self.writer.add_scalar('val/best_loss', self.best_val_loss, val_epoch)
 
-        # If it's the best model, save automatically
+        # New best: only overwrite *_best.pt (full *_epoch_*.pt follows save_epoch in train_vqvae.py)
         if is_best:
-            self.save_model(is_best=True, save_epoch=val_epoch)
+            self.save_model(is_best=True, save_epoch=val_epoch, write_epoch_checkpoint=False)
 
         return avg_loss
 
-    def save_model(self, is_best=False, save_epoch=None):
+    def save_model(self, is_best=False, save_epoch=None, write_epoch_checkpoint=True):
         # Only save model on rank 0 in DDP mode
         if 'RANK' in os.environ and int(os.environ['RANK']) != 0:
             return
@@ -466,12 +476,13 @@ class VQVAETrainer():
             'args': args_to_save,
         }
 
-        # Save regular checkpoint
-        save_path = os.path.join(self.save_dir, f'{self.args.dataset_type}_se_vqvae_epoch_{save_epoch}.pt')
-        torch.save(checkpoint, save_path)
-        print(f"Model saved to: {save_path}")
-        
-        # Save best model
+        # Large resume checkpoint (only on save_epoch intervals from train_vqvae.py)
+        if write_epoch_checkpoint:
+            save_path = os.path.join(self.save_dir, f'{self.args.dataset_type}_se_vqvae_epoch_{save_epoch}.pt')
+            torch.save(checkpoint, save_path)
+            print(f"Model saved to: {save_path}")
+
+        # Best weights only (small file; does not duplicate full checkpoint unless same call sets both flags)
         if is_best:
             best_path = os.path.join(self.save_dir, f'{self.args.dataset_type}_se_vqvae_best.pt')
             torch.save(checkpoint, best_path)

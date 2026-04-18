@@ -766,14 +766,16 @@ def parse_sequence_to_cad_data(sequence, vocab_info, se_vqvae_model, device="cpu
         'graph_edges': ( [p[0] for p in edge_face_pairs], [p[1] for p in edge_face_pairs] )
     }
 
-def reconstruct_cad_from_sequence(sequence, vocab_info, se_vqvae_model, device="cpu", scale_factor=1.0, verbose=True):
+def reconstruct_cad_from_sequence(sequence, vocab_info, se_vqvae_model, device="cpu", scale_factor=1.0, verbose=True, return_debug=False):
     """Reconstruct CAD model from autoregressive sequence (no explicit vertex data)"""
     # print("=== Starting CAD Reconstruction from Sequence (No Vertex Data) ===")
-    
+    debug_info = {}
+
     try:
         cad_data = parse_sequence_to_cad_data(
             sequence, vocab_info, se_vqvae_model, device, scale_factor
         )
+        debug_info['cad_data'] = cad_data
         
         surf_ncs_vqvae = np.array(cad_data['surf_ncs'])
         edge_ncs_vqvae = np.array(cad_data['edge_ncs'])
@@ -783,6 +785,8 @@ def reconstruct_cad_from_sequence(sequence, vocab_info, se_vqvae_model, device="
 
         if len(edge_bbox_vqvae) != len(edge_ncs_vqvae):
             print(f"Edge bbox count ({len(edge_bbox_vqvae)}) does not match NCS data count ({len(edge_ncs_vqvae)}). Cannot continue.")
+            if return_debug:
+                return None, debug_info
             return None
 
         # # 1. Build face-edge adjacency relationship
@@ -1068,19 +1072,33 @@ def reconstruct_cad_from_sequence(sequence, vocab_info, se_vqvae_model, device="
         try:
             # print("Step 2: Joint Optimization...")
             surf_wcs, edge_wcs = joint_optimize(surf_ncs_vqvae, edge_ncs_vqvae, surf_bbox_vqvae, unique_vertices, EdgeVertexAdj, FaceEdgeAdj, len(edge_ncs_vqvae), len(surf_ncs_vqvae))
+            debug_info['joint_opt'] = {
+                'surf_wcs': surf_wcs,
+                'edge_wcs': edge_wcs,
+                'FaceEdgeAdj': FaceEdgeAdj,
+                'EdgeVertexAdj': EdgeVertexAdj,
+                'unique_vertices': unique_vertices,
+            }
         except Exception as e:
             import traceback
-            print(f'Joint optimization failed: {e}'); traceback.print_exc(); return None
+            print(f'Joint optimization failed: {e}'); traceback.print_exc()
+            if return_debug:
+                return None, debug_info
+            return None
         
         # print("Step 3: Building B-rep...")
         solid = construct_brep(surf_wcs, edge_wcs, FaceEdgeAdj, EdgeVertexAdj)
         # print("B-rep construction completed")
-        
+        if return_debug:
+            return solid, debug_info
         return solid
         
     except Exception as e:
         import traceback
-        print(f"Error during reconstruction: {e}"); traceback.print_exc(); return None
+        print(f"Error during reconstruction: {e}"); traceback.print_exc()
+        if return_debug:
+            return None, debug_info
+        return None
 
 def convert_vqvae_output_to_ncs(reconstructed_tensor, data_type='face'):
     """Convert VQVAE output to NCS format"""

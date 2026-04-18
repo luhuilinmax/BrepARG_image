@@ -173,6 +173,9 @@ def load_step(root_dir):
     - data_files [str]: A list containing the paths to all STEP parent directory
     """
     data_files = []
+    # os.walk() only traverses directories; a single .step file path yields nothing.
+    if os.path.isfile(root_dir) and root_dir.lower().endswith(".step"):
+        return [root_dir]
     # Walk through the directory tree starting from the root folder
     for root, dirs, files in os.walk(root_dir):
         for filename in files:
