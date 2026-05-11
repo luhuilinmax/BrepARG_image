@@ -17,6 +17,10 @@ if not os.path.exists(args.save_dir):
     # Fixed code
     os.makedirs(args.save_dir, exist_ok=True)
 
+def sync_if_needed():
+    if dist.is_available() and dist.is_initialized():
+        dist.barrier()
+
 def run(args):
     # Get DDP environment variables (torchrun sets these automatically)
     world_size = int(os.environ.get('WORLD_SIZE', '1'))
@@ -41,14 +45,16 @@ def run(args):
     # Initialize datasets
     train_dataset = CombinedData(args.data_list, args.surface_list, args.edge_list, 
                                   validate=False, aug=True, use_type_flag=args.use_type_flag)
+    
+    # Initialize trainer first so all ranks join the DDP process group together.
+    vae = VQVAETrainer(args, train_dataset, None, multi_gpu=multi_gpu)
+    
+    # Load validation data only after DDP initialization; other ranks wait at the barrier.
     if rank == 0:
         val_dataset = CombinedData(args.data_list, args.surface_list, args.edge_list, 
                                     validate=True, aug=False, use_type_flag=args.use_type_flag)
-    else:
-        val_dataset = None
-    
-    # Initialize trainer (internally initializes DDP process group)
-    vae = VQVAETrainer(args, train_dataset, val_dataset, multi_gpu=multi_gpu)
+        vae.set_val_dataset(val_dataset)
+    sync_if_needed()
     
     # After trainer initialization, DDP is ready; safe to use dist functions
     if rank == 0:
@@ -64,15 +70,17 @@ def run(args):
         # Train one epoch (internally increments vae.epoch and handles synchronization at the end)
         vae.train_one_epoch()
         
-        # Validation (rank 0 only) - train_one_epoch already handles synchronization; no extra barrier needed
+        # Validation is rank 0 only; all ranks wait afterwards before the next epoch.
         if current_epoch % args.test_epoch == 0:
             if rank == 0:
                 vae.test_val()
+            sync_if_needed()
         
-        # Saving (rank 0 only) - train_one_epoch already handles synchronization; no extra barrier needed
+        # Saving is rank 0 only; all ranks wait afterwards to keep DDP steps aligned.
         if current_epoch % args.save_epoch == 0:
             if rank == 0:
                 vae.save_model(save_epoch=current_epoch)
+            sync_if_needed()
     
     # Save final model (if not already saved)
     if rank == 0:

@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from diffusers import VQModel
 import time
 import math
+from datetime import timedelta
 from model import ARModel
 from torch.utils.data import DataLoader
 from quantise import VectorQuantiser
@@ -58,6 +59,8 @@ class VQVAETrainer():
         # Initialize data loader configuration
         num_workers = 4
         effective_batch_size = args.batch_size
+        self.num_workers = num_workers
+        self.effective_batch_size = effective_batch_size
         
         if self.multi_gpu and self.rank == 0:
             print(f"Data loader configuration:")
@@ -156,7 +159,7 @@ class VQVAETrainer():
             if not dist.is_initialized():
                 # Windows/CPU fallback to gloo; CUDA + non-Windows use nccl
                 backend = 'nccl' if (torch.cuda.is_available() and os.name != 'nt') else 'gloo'
-                dist.init_process_group(backend=backend)
+                dist.init_process_group(backend=backend, timeout=timedelta(hours=4))
             
             # Get distributed information
             local_rank = int(os.environ['LOCAL_RANK'])
@@ -209,6 +212,23 @@ class VQVAETrainer():
             if args.weight:
                 print(f"Specified weight path does not exist: {args.weight}")
             print("Training from scratch")
+
+    def set_val_dataset(self, val_dataset):
+        """Attach a validation dataset after DDP initialization."""
+        self.val_sampler = None
+        if val_dataset is None:
+            self.val_dataloader = None
+            return
+
+        self.val_dataloader = torch.utils.data.DataLoader(
+            val_dataset,
+            shuffle=False,
+            batch_size=self.effective_batch_size,
+            sampler=None,
+            drop_last=False,
+            num_workers=self.num_workers,
+            pin_memory=torch.cuda.is_available()
+        )
 
     def train_one_epoch(self):
         self.model.train()
