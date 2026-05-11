@@ -52,7 +52,9 @@ def run(args):
     # Load validation data only after DDP initialization; other ranks wait at the barrier.
     if rank == 0:
         val_dataset = CombinedData(args.data_list, args.surface_list, args.edge_list, 
-                                    validate=True, aug=False, use_type_flag=args.use_type_flag)
+                                    validate=True, aug=False, use_type_flag=args.use_type_flag,
+                                    val_surface_cache=args.val_surface_cache,
+                                    val_edge_cache=args.val_edge_cache)
         vae.set_val_dataset(val_dataset)
     sync_if_needed()
     

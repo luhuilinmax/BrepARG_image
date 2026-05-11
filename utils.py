@@ -39,6 +39,10 @@ def get_se_args():
                         help='Path to deduplicated surface source data')
     parser.add_argument('--edge_list', type=str, default='data/deepcad_parsed_unique_edges.pkl',
                         help='Path to deduplicated edge source data')
+    parser.add_argument('--val_surface_cache', type=str, default='',
+                        help='Optional preprocessed validation surface pkl cache')
+    parser.add_argument('--val_edge_cache', type=str, default='',
+                        help='Optional preprocessed validation edge pkl cache')
     
     # Training parameters
     parser.add_argument('--batch_size', type=int, default=1024, help='batch size per GPU')

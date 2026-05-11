@@ -149,3 +149,60 @@ rank 0 保存模型后，所有 rank barrier
 ```
 
 这样可以避免非 `rank 0` 在 `rank 0` 验证或保存期间提前进入下一轮 DDP 训练。
+
+## 2026-05-11 补充：验证集 pkl 预处理缓存
+
+为了避免每次训练启动时都逐个读取 `val` split 中的大量原始 pkl 文件，新增了验证集 pkl 预处理脚本：
+
+```text
+prepare_val_cache.py
+```
+
+该脚本会从 `data_list` 的 `val` split 中读取原始样本 pkl，分别提取：
+
+```text
+surf_ncs -> val surface cache
+edge_ncs -> val edge cache
+```
+
+输出文件仍然是 pkl，并且直接保存堆叠后的 NumPy 数组，和训练集使用的 deduplicated pkl 数组风格保持接近。
+
+示例生成命令：
+
+```bash
+cd /workspace/BrepARG_m_ddp_fix
+
+python prepare_val_cache.py \
+  --data_list /workspace/data/deduplicate/abc_data_split_6bit.pkl \
+  --output_surface /workspace/data/deduplicate/abc_val_surfaces_cache.pkl \
+  --output_edge /workspace/data/deduplicate/abc_val_edges_cache.pkl \
+  --dtype float32
+```
+
+生成后，训练时增加两个参数：
+
+```bash
+--val_surface_cache /workspace/data/deduplicate/abc_val_surfaces_cache.pkl \
+--val_edge_cache /workspace/data/deduplicate/abc_val_edges_cache.pkl
+```
+
+完整训练命令示例：
+
+```bash
+torchrun --nproc_per_node=5 --master_port=29500 train_vqvae.py \
+  --data_list /workspace/data/deduplicate/abc_data_split_6bit.pkl \
+  --surface_list /workspace/data/deduplicate/abc_data_faces.pkl \
+  --edge_list /workspace/data/deduplicate/abc_data_edges.pkl \
+  --val_surface_cache /workspace/data/deduplicate/abc_val_surfaces_cache.pkl \
+  --val_edge_cache /workspace/data/deduplicate/abc_val_edges_cache.pkl \
+  --dataset_type abc \
+  --batch_size 128 \
+  --train_epoch 3000 \
+  --test_epoch 15 \
+  --save_epoch 200 \
+  --env vqvae_debug \
+  --dir_name checkpoints \
+  --tb_log_dir logs/vqvae_debug
+```
+
+注意：缓存生成本身仍然需要读取完整验证集一次，所以第一次生成会比较慢；但生成成功后，后续训练启动时不再需要逐个读取 `34080` 个原始验证 pkl 文件。

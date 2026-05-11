@@ -10,32 +10,47 @@ def _dataset_log(message):
     rank = int(os.environ.get('RANK', '0')) if 'RANK' in os.environ else 0
     print(f'[rank {rank}] {message}', flush=True)
 
+def _load_cached_array(cache_path, field_name):
+    _dataset_log(f'loading cached {field_name} data from {cache_path}')
+    with open(cache_path, "rb") as tf:
+        cached = pickle.load(tf)
+    if isinstance(cached, dict):
+        cached = cached.get(field_name, cached.get("data"))
+    if cached is None:
+        raise ValueError(f"Cache file {cache_path} does not contain '{field_name}' or 'data'")
+    shape = getattr(cached, 'shape', None)
+    _dataset_log(f'cached {field_name} ready with {len(cached)} items, shape={shape}')
+    return cached
+
 class SurfData(torch.utils.data.Dataset):
     """ Surface VAE Dataloader - supports NCS data """
-    def __init__(self, data_list, input_list, validate=False, aug=False, use_type_flag=False): 
+    def __init__(self, data_list, input_list, validate=False, aug=False, use_type_flag=False, val_cache=""): 
         self.validate = validate
         self.aug = aug
         self.use_type_flag = use_type_flag  # Controls whether to use type flag
 
         # Load validation data
         if self.validate: 
-            _dataset_log(f'SurfData(val): loading split list from {data_list}')
-            with open(data_list, "rb") as tf:
-                data_paths = pickle.load(tf)['val']
-            _dataset_log(f'SurfData(val): found {len(data_paths)} validation files')
-            
-            datas = [] 
-            for path in tqdm(data_paths, desc='Loading val surface data', disable=os.environ.get('RANK', '0') != '0'):
-                with open(path, "rb") as tf:
-                    data = pickle.load(tf)
-                if 'surf_ncs' in data:
-                    datas.append(data['surf_ncs'])
-            _dataset_log(f'SurfData(val): loaded {len(datas)} surface arrays, stacking...')
-            if datas:
-                self.data = np.vstack(datas)
+            if val_cache:
+                self.data = _load_cached_array(val_cache, "surf_ncs")
             else:
-                self.data = np.array([]).reshape(0, 32, 32, 3)
-            _dataset_log(f'SurfData(val): ready with shape {self.data.shape}')
+                _dataset_log(f'SurfData(val): loading split list from {data_list}')
+                with open(data_list, "rb") as tf:
+                    data_paths = pickle.load(tf)['val']
+                _dataset_log(f'SurfData(val): found {len(data_paths)} validation files')
+                
+                datas = [] 
+                for path in tqdm(data_paths, desc='Loading val surface data', disable=os.environ.get('RANK', '0') != '0'):
+                    with open(path, "rb") as tf:
+                        data = pickle.load(tf)
+                    if 'surf_ncs' in data:
+                        datas.append(data['surf_ncs'])
+                _dataset_log(f'SurfData(val): loaded {len(datas)} surface arrays, stacking...')
+                if datas:
+                    self.data = np.vstack(datas)
+                else:
+                    self.data = np.array([]).reshape(0, 32, 32, 3)
+                _dataset_log(f'SurfData(val): ready with shape {self.data.shape}')
 
         # Load training data (deduplicated)
         else:
@@ -67,32 +82,35 @@ class SurfData(torch.utils.data.Dataset):
 
 class EdgeData(torch.utils.data.Dataset):
     """ Edge VAE Dataloader - supports NCS data """
-    def __init__(self, data_list, input_list, validate=False, aug=False, use_type_flag=False): 
+    def __init__(self, data_list, input_list, validate=False, aug=False, use_type_flag=False, val_cache=""): 
         self.validate = validate
         self.aug = aug
         self.use_type_flag = use_type_flag  # Controls whether to use type flag
 
         # Load validation data
         if self.validate: 
-            _dataset_log(f'EdgeData(val): loading split list from {data_list}')
-            with open(data_list, "rb") as tf:
-                data_paths = pickle.load(tf)['val']
-            _dataset_log(f'EdgeData(val): found {len(data_paths)} validation files')
-
-            datas = []
-            for path in tqdm(data_paths, desc='Loading val edge data', disable=os.environ.get('RANK', '0') != '0'):
-                with open(path, "rb") as tf:
-                    data = pickle.load(tf)
-
-                # Modification: use 'edge_ncs' instead of 'graph_edge_grid'
-                if 'edge_ncs' in data:
-                    datas.append(data['edge_ncs'])
-            _dataset_log(f'EdgeData(val): loaded {len(datas)} edge arrays, stacking...')
-            if datas:
-                self.data = np.vstack(datas)
+            if val_cache:
+                self.data = _load_cached_array(val_cache, "edge_ncs")
             else:
-                self.data = np.array([]).reshape(0, 32, 3)
-            _dataset_log(f'EdgeData(val): ready with shape {self.data.shape}')
+                _dataset_log(f'EdgeData(val): loading split list from {data_list}')
+                with open(data_list, "rb") as tf:
+                    data_paths = pickle.load(tf)['val']
+                _dataset_log(f'EdgeData(val): found {len(data_paths)} validation files')
+
+                datas = []
+                for path in tqdm(data_paths, desc='Loading val edge data', disable=os.environ.get('RANK', '0') != '0'):
+                    with open(path, "rb") as tf:
+                        data = pickle.load(tf)
+
+                    # Modification: use 'edge_ncs' instead of 'graph_edge_grid'
+                    if 'edge_ncs' in data:
+                        datas.append(data['edge_ncs'])
+                _dataset_log(f'EdgeData(val): loaded {len(datas)} edge arrays, stacking...')
+                if datas:
+                    self.data = np.vstack(datas)
+                else:
+                    self.data = np.array([]).reshape(0, 32, 3)
+                _dataset_log(f'EdgeData(val): ready with shape {self.data.shape}')
 
         # Load training data (deduplicated)
         else:
@@ -130,17 +148,20 @@ class EdgeData(torch.utils.data.Dataset):
 
 class CombinedData(torch.utils.data.Dataset):
     """ Combined Surface and Edge VAE Dataloader """
-    def __init__(self, data_list, surface_list, edge_list, validate=False, aug=False, use_type_flag=True):
+    def __init__(self, data_list, surface_list, edge_list, validate=False, aug=False, use_type_flag=True,
+                 val_surface_cache="", val_edge_cache=""):
         split_name = 'val' if validate else 'train'
         _dataset_log(f'CombinedData({split_name}): loading combined surface and edge data...')
         
         # Initialize surface dataset
         _dataset_log(f'CombinedData({split_name}): initializing SurfData')
-        self.surf_data = SurfData(data_list, surface_list, validate=validate, aug=aug, use_type_flag=use_type_flag)
+        self.surf_data = SurfData(data_list, surface_list, validate=validate, aug=aug,
+                                  use_type_flag=use_type_flag, val_cache=val_surface_cache)
         
         # Initialize edge dataset
         _dataset_log(f'CombinedData({split_name}): initializing EdgeData')
-        self.edge_data = EdgeData(data_list, edge_list, validate=validate, aug=aug, use_type_flag=use_type_flag)
+        self.edge_data = EdgeData(data_list, edge_list, validate=validate, aug=aug,
+                                  use_type_flag=use_type_flag, val_cache=val_edge_cache)
         
         # Combine data
         _dataset_log(f'CombinedData({split_name}): building combined index')
