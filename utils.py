@@ -43,12 +43,24 @@ def get_se_args():
                         help='Optional preprocessed validation surface pkl cache')
     parser.add_argument('--val_edge_cache', type=str, default='',
                         help='Optional preprocessed validation edge pkl cache')
+    parser.add_argument('--surface_mmap', type=str, default='',
+                        help='Optional training surface .npy file loaded with NumPy mmap')
+    parser.add_argument('--edge_mmap', type=str, default='',
+                        help='Optional training edge .npy file loaded with NumPy mmap')
+    parser.add_argument('--val_surface_mmap', type=str, default='',
+                        help='Optional validation surface .npy file loaded with NumPy mmap')
+    parser.add_argument('--val_edge_mmap', type=str, default='',
+                        help='Optional validation edge .npy file loaded with NumPy mmap')
     
     # Training parameters
     parser.add_argument('--batch_size', type=int, default=1024, help='batch size per GPU')
     parser.add_argument('--train_epoch', type=int, default=3000, help='number of epochs to train for')
     parser.add_argument('--test_epoch', type=int, default=1, help='number of epochs to test model')
     parser.add_argument('--save_epoch', type=int, default=5, help='number of epochs to save model')
+    parser.add_argument('--num_workers', type=int, default=4, help='DataLoader workers for training')
+    parser.add_argument('--val_num_workers', type=int, default=1, help='DataLoader workers for validation')
+    parser.add_argument('--val_max_items', type=int, default=0,
+                        help='Limit validation to a balanced subset; 0 means full validation')
     parser.add_argument('--max_face', type=int, default=50, help='maximum number of faces')
     parser.add_argument('--max_edge', type=int, default=150, help='maximum number of edges per face')
     parser.add_argument('--save_folder', type=str, default='my_data', help='save folder')

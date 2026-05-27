@@ -44,7 +44,9 @@ def run(args):
     
     # Initialize datasets
     train_dataset = CombinedData(args.data_list, args.surface_list, args.edge_list, 
-                                  validate=False, aug=True, use_type_flag=args.use_type_flag)
+                                  validate=False, aug=True, use_type_flag=args.use_type_flag,
+                                  surface_mmap=args.surface_mmap,
+                                  edge_mmap=args.edge_mmap)
     
     # Initialize trainer first so all ranks join the DDP process group together.
     vae = VQVAETrainer(args, train_dataset, None, multi_gpu=multi_gpu)
@@ -54,7 +56,10 @@ def run(args):
         val_dataset = CombinedData(args.data_list, args.surface_list, args.edge_list, 
                                     validate=True, aug=False, use_type_flag=args.use_type_flag,
                                     val_surface_cache=args.val_surface_cache,
-                                    val_edge_cache=args.val_edge_cache)
+                                    val_edge_cache=args.val_edge_cache,
+                                    val_surface_mmap=args.val_surface_mmap,
+                                    val_edge_mmap=args.val_edge_mmap,
+                                    max_items=args.val_max_items)
         vae.set_val_dataset(val_dataset)
     sync_if_needed()
     

@@ -22,16 +22,25 @@ def _load_cached_array(cache_path, field_name):
     _dataset_log(f'cached {field_name} ready with {len(cached)} items, shape={shape}')
     return cached
 
+def _load_mmap_array(mmap_path, field_name):
+    _dataset_log(f'loading mmap {field_name} data from {mmap_path}')
+    data = np.load(mmap_path, mmap_mode="r")
+    _dataset_log(f'mmap {field_name} ready with {len(data)} items, shape={data.shape}, dtype={data.dtype}')
+    return data
+
 class SurfData(torch.utils.data.Dataset):
     """ Surface VAE Dataloader - supports NCS data """
-    def __init__(self, data_list, input_list, validate=False, aug=False, use_type_flag=False, val_cache=""): 
+    def __init__(self, data_list, input_list, validate=False, aug=False, use_type_flag=False,
+                 val_cache="", mmap_path=""): 
         self.validate = validate
         self.aug = aug
         self.use_type_flag = use_type_flag  # Controls whether to use type flag
 
         # Load validation data
         if self.validate: 
-            if val_cache:
+            if mmap_path:
+                self.data = _load_mmap_array(mmap_path, "surf_ncs")
+            elif val_cache:
                 self.data = _load_cached_array(val_cache, "surf_ncs")
             else:
                 _dataset_log(f'SurfData(val): loading split list from {data_list}')
@@ -54,11 +63,14 @@ class SurfData(torch.utils.data.Dataset):
 
         # Load training data (deduplicated)
         else:
-            _dataset_log(f'SurfData(train): loading deduplicated surfaces from {input_list}')
-            with open(input_list, "rb") as tf:
-                self.data = pickle.load(tf)
-            shape = getattr(self.data, 'shape', None)
-            _dataset_log(f'SurfData(train): ready with {len(self.data)} items, shape={shape}')
+            if mmap_path:
+                self.data = _load_mmap_array(mmap_path, "surf_ncs")
+            else:
+                _dataset_log(f'SurfData(train): loading deduplicated surfaces from {input_list}')
+                with open(input_list, "rb") as tf:
+                    self.data = pickle.load(tf)
+                shape = getattr(self.data, 'shape', None)
+                _dataset_log(f'SurfData(train): ready with {len(self.data)} items, shape={shape}')
         return
 
     def __len__(self):
@@ -82,14 +94,17 @@ class SurfData(torch.utils.data.Dataset):
 
 class EdgeData(torch.utils.data.Dataset):
     """ Edge VAE Dataloader - supports NCS data """
-    def __init__(self, data_list, input_list, validate=False, aug=False, use_type_flag=False, val_cache=""): 
+    def __init__(self, data_list, input_list, validate=False, aug=False, use_type_flag=False,
+                 val_cache="", mmap_path=""): 
         self.validate = validate
         self.aug = aug
         self.use_type_flag = use_type_flag  # Controls whether to use type flag
 
         # Load validation data
         if self.validate: 
-            if val_cache:
+            if mmap_path:
+                self.data = _load_mmap_array(mmap_path, "edge_ncs")
+            elif val_cache:
                 self.data = _load_cached_array(val_cache, "edge_ncs")
             else:
                 _dataset_log(f'EdgeData(val): loading split list from {data_list}')
@@ -114,11 +129,14 @@ class EdgeData(torch.utils.data.Dataset):
 
         # Load training data (deduplicated)
         else:
-            _dataset_log(f'EdgeData(train): loading deduplicated edges from {input_list}')
-            with open(input_list, "rb") as tf:
-                self.data = pickle.load(tf)         
-            shape = getattr(self.data, 'shape', None)
-            _dataset_log(f'EdgeData(train): ready with {len(self.data)} items, shape={shape}')
+            if mmap_path:
+                self.data = _load_mmap_array(mmap_path, "edge_ncs")
+            else:
+                _dataset_log(f'EdgeData(train): loading deduplicated edges from {input_list}')
+                with open(input_list, "rb") as tf:
+                    self.data = pickle.load(tf)         
+                shape = getattr(self.data, 'shape', None)
+                _dataset_log(f'EdgeData(train): ready with {len(self.data)} items, shape={shape}')
         return
 
     def __len__(self):
@@ -149,40 +167,59 @@ class EdgeData(torch.utils.data.Dataset):
 class CombinedData(torch.utils.data.Dataset):
     """ Combined Surface and Edge VAE Dataloader """
     def __init__(self, data_list, surface_list, edge_list, validate=False, aug=False, use_type_flag=True,
-                 val_surface_cache="", val_edge_cache=""):
+                 val_surface_cache="", val_edge_cache="", surface_mmap="", edge_mmap="",
+                 val_surface_mmap="", val_edge_mmap="", max_items=0):
         split_name = 'val' if validate else 'train'
         _dataset_log(f'CombinedData({split_name}): loading combined surface and edge data...')
+        surface_mmap_path = val_surface_mmap if validate else surface_mmap
+        edge_mmap_path = val_edge_mmap if validate else edge_mmap
         
         # Initialize surface dataset
         _dataset_log(f'CombinedData({split_name}): initializing SurfData')
         self.surf_data = SurfData(data_list, surface_list, validate=validate, aug=aug,
-                                  use_type_flag=use_type_flag, val_cache=val_surface_cache)
+                                  use_type_flag=use_type_flag, val_cache=val_surface_cache,
+                                  mmap_path=surface_mmap_path)
         
         # Initialize edge dataset
         _dataset_log(f'CombinedData({split_name}): initializing EdgeData')
         self.edge_data = EdgeData(data_list, edge_list, validate=validate, aug=aug,
-                                  use_type_flag=use_type_flag, val_cache=val_edge_cache)
+                                  use_type_flag=use_type_flag, val_cache=val_edge_cache,
+                                  mmap_path=edge_mmap_path)
         
-        # Combine data
-        _dataset_log(f'CombinedData({split_name}): building combined index')
-        self.data = []
-        
-        # Add surface data
-        for i in range(len(self.surf_data)):
-            self.data.append(('surface', i))
-            
-        # Add edge data
-        for i in range(len(self.edge_data)):
-            self.data.append(('edge', i))
-            
-        _dataset_log(f'CombinedData({split_name}): ready with {len(self.data)} items '
+        self.surface_len = len(self.surf_data)
+        self.edge_len = len(self.edge_data)
+        self.total_len = self.surface_len + self.edge_len
+        self.index_map = None
+
+        if max_items and max_items > 0 and max_items < self.total_len:
+            surface_items = min(self.surface_len, max_items // 2)
+            edge_items = min(self.edge_len, max_items - surface_items)
+            remaining = max_items - surface_items - edge_items
+            if remaining > 0:
+                extra_surface = min(self.surface_len - surface_items, remaining)
+                surface_items += extra_surface
+                remaining -= extra_surface
+            if remaining > 0:
+                edge_items += min(self.edge_len - edge_items, remaining)
+
+            self.index_map = [('surface', i) for i in range(surface_items)]
+            self.index_map.extend(('edge', i) for i in range(edge_items))
+            self.total_len = len(self.index_map)
+            _dataset_log(f'CombinedData({split_name}): using subset with {self.total_len} items')
+
+        _dataset_log(f'CombinedData({split_name}): ready with {self.total_len} items '
                      f'(surfaces: {len(self.surf_data)}, edges: {len(self.edge_data)})')
         
     def __len__(self):
-        return len(self.data)
+        return self.total_len
     
     def __getitem__(self, index):
-        data_type, data_index = self.data[index]
+        if self.index_map is not None:
+            data_type, data_index = self.index_map[index]
+        elif index < self.surface_len:
+            data_type, data_index = 'surface', index
+        else:
+            data_type, data_index = 'edge', index - self.surface_len
         
         if data_type == 'surface':
             # self.surf_data already returns torch.FloatTensor; avoid redundant wrapping

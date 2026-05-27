@@ -1,1 +1,7 @@
 checkpoints/
+checkpoints_bench_bs384/
+checkpoints_bench_bs512/
+checkpoints_bench_bs768/
+checkpoints_bench_bs1024/
+checkpoints_bs768/
+logs/

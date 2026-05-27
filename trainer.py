@@ -57,15 +57,18 @@ class VQVAETrainer():
         self.writer = SummaryWriter(log_dir=tb_dir)
 
         # Initialize data loader configuration
-        num_workers = 4
+        num_workers = args.num_workers
+        val_num_workers = args.val_num_workers
         effective_batch_size = args.batch_size
         self.num_workers = num_workers
+        self.val_num_workers = val_num_workers
         self.effective_batch_size = effective_batch_size
         
         if self.multi_gpu and self.rank == 0:
             print(f"Data loader configuration:")
             print(f"  Batch size per GPU: {effective_batch_size}")
-            print(f"  Num workers: {num_workers}")
+            print(f"  Train num workers: {num_workers}")
+            print(f"  Val num workers: {val_num_workers}")
         
         # Create distributed sampler for DDP
         train_sampler = None
@@ -109,7 +112,7 @@ class VQVAETrainer():
                 batch_size=effective_batch_size, 
                 sampler=val_sampler,
                 drop_last=False,
-                num_workers=num_workers,
+                num_workers=val_num_workers,
                 pin_memory=torch.cuda.is_available()
             )
         else:
@@ -226,7 +229,7 @@ class VQVAETrainer():
             batch_size=self.effective_batch_size,
             sampler=None,
             drop_last=False,
-            num_workers=self.num_workers,
+            num_workers=self.val_num_workers,
             pin_memory=torch.cuda.is_available()
         )
 
