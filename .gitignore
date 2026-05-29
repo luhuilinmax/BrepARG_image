@@ -5,3 +5,4 @@ checkpoints_bench_bs768/
 checkpoints_bench_bs1024/
 checkpoints_bs768/
 logs/
+result/
