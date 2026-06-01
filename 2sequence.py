@@ -367,6 +367,7 @@ class ARDataPreprocessor:
         self.train_paths = ds['train']
         self.val_paths = ds.get('val', [])
         self.test_paths = ds.get('test', [])
+        self._apply_split_limits()
 
         # Vocabulary/offsets
         self.face_index_size = 50
@@ -389,6 +390,31 @@ class ARDataPreprocessor:
 
         self.group_cache = []
         self._process_all_data()
+
+    def _apply_split_limits(self):
+        def limit_paths(paths, limit):
+            limit = int(limit or 0)
+            return paths[:limit] if limit > 0 else paths
+
+        original_counts = {
+            "train": len(self.train_paths),
+            "val": len(self.val_paths),
+            "test": len(self.test_paths),
+        }
+        self.train_paths = limit_paths(self.train_paths, getattr(self.args, "train_limit", 0))
+        self.val_paths = limit_paths(self.val_paths, getattr(self.args, "val_limit", 0))
+        self.test_paths = limit_paths(self.test_paths, getattr(self.args, "test_limit", 0))
+        limited_counts = {
+            "train": len(self.train_paths),
+            "val": len(self.val_paths),
+            "test": len(self.test_paths),
+        }
+        print(
+            "[Split limits] "
+            f"train: {limited_counts['train']}/{original_counts['train']} | "
+            f"val: {limited_counts['val']}/{original_counts['val']} | "
+            f"test: {limited_counts['test']}/{original_counts['test']}"
+        )
 
     # ---------- Main processing ----------
     def _process_all_data(self):
@@ -808,6 +834,17 @@ class ARDataPreprocessor:
             print(f"[WARN] Error processing {path}: {e}")
             return None
 
+def str2bool(value):
+    if isinstance(value, bool):
+        return value
+    value = str(value).lower()
+    if value in ("yes", "true", "t", "1", "y"):
+        return True
+    if value in ("no", "false", "f", "0", "n"):
+        return False
+    raise argparse.ArgumentTypeError(f"Boolean value expected, got {value!r}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_list', type=str, default='data/abc_data_split_6bit.pkl', help='Path to pkl with train/val/test paths')
@@ -816,8 +853,11 @@ def main():
     parser.add_argument('--max_face', type=int, default=50)
     parser.add_argument('--max_edge', type=int, default=150)
     parser.add_argument('--scale', type=float, default=1.0)
-    parser.add_argument('--aug', default=True, type=bool, help='Whether to save rotation augmentation (90/180/270)')
+    parser.add_argument('--aug', default=True, type=str2bool, help='Whether to save rotation augmentation (90/180/270)')
     parser.add_argument("--gpu", type=int, nargs='+', default=[0], help="GPU IDs to use")
+    parser.add_argument('--train_limit', type=int, default=0, help='Limit number of train CAD paths; 0 means no limit')
+    parser.add_argument('--val_limit', type=int, default=0, help='Limit number of val CAD paths; 0 means no limit')
+    parser.add_argument('--test_limit', type=int, default=0, help='Limit number of test CAD paths; 0 means no limit')
     parser.add_argument('--trace', action='store_true', default=False, help='Trace data flow of the 1st sample (print + save report)')
     parser.add_argument('--trace_output', type=str, default='data/trace_report.txt', help='Path to save trace report')
     args = parser.parse_args()
