@@ -6,3 +6,8 @@ checkpoints_bench_bs1024/
 checkpoints_bs768/
 result/
 data/
+debug_render_output/
+debug_render_styles/
+debug_render_vit/
+logs/
+00000004_1ffb81a71e5b402e966b9341_step_003.step
