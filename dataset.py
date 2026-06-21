@@ -33,6 +33,8 @@ class SurfData(torch.utils.data.Dataset):
     def __init__(self, data_list, input_list, validate=False, aug=False, use_type_flag=False,
                  val_cache="", mmap_path=""): 
         self.validate = validate
+        self.image_feature_index_file = image_feature_index_file
+        self.image_feature_index = None
         self.aug = aug
         self.use_type_flag = use_type_flag  # Controls whether to use type flag
 
@@ -97,6 +99,8 @@ class EdgeData(torch.utils.data.Dataset):
     def __init__(self, data_list, input_list, validate=False, aug=False, use_type_flag=False,
                  val_cache="", mmap_path=""): 
         self.validate = validate
+        self.image_feature_index_file = image_feature_index_file
+        self.image_feature_index = None
         self.aug = aug
         self.use_type_flag = use_type_flag  # Controls whether to use type flag
 
@@ -253,7 +257,7 @@ class ARData(torch.utils.data.Dataset):
     }
     """
 
-    def __init__(self, sequence_file, validate=False, args=None):
+    def __init__(self, sequence_file, validate=False, args=None, image_feature_index_file=None):
         """
         Args:
             sequence_file (str): Path to the pickle sequence file
@@ -263,6 +267,8 @@ class ARData(torch.utils.data.Dataset):
         self.args = args
         self.max_seq_len = args.max_seq_len
         self.validate = validate
+        self.image_feature_index_file = image_feature_index_file
+        self.image_feature_index = None
 
         rank = int(os.environ.get("RANK", "0"))
         if rank == 0:
@@ -306,6 +312,10 @@ class ARData(torch.utils.data.Dataset):
                     f"Filtered groups by length (>{self.max_seq_len}): "
                     f"{original_count} -> {filtered_count} ({removed_count} removed)"
                 )
+
+            if self.image_feature_index_file:
+                with open(self.image_feature_index_file, 'rb') as f:
+                    self.image_feature_index = pickle.load(f)
 
             # Save metadata
             self.vocab_size = data["vocab_size"]
@@ -378,13 +388,21 @@ class ARData(torch.utils.data.Dataset):
         input_ids = torch.tensor(sample["input_ids"], dtype=torch.long)
         attention_mask = torch.tensor(sample["attention_mask"], dtype=torch.long)
 
+        output = {"input_ids": input_ids, "attention_mask": attention_mask}
+        if self.image_feature_index is not None:
+            cad_stem = group["cad_stem"]
+            feature_info = self.image_feature_index[cad_stem]
+            feature_payload = torch.load(feature_info["feature_path"], map_location='cpu')
+            output["image_features"] = feature_payload["patch_tokens"]
+            output["cad_stem"] = cad_stem
+
         # if (not self.validate) and (random.random() < 0.5):
         #     input_ids = self._reindex(input_ids)
 
         # if random.random() < 0.5:
         #     input_ids = self._reindex(input_ids)
 
-        return {"input_ids": input_ids, "attention_mask": attention_mask}
+        return output
     
     def collate_fn(self, batch):
         """
@@ -392,6 +410,8 @@ class ARData(torch.utils.data.Dataset):
         """
         input_ids = [item["input_ids"] for item in batch]
         attention_masks = [item["attention_mask"] for item in batch]
+        image_features = [item.get("image_features") for item in batch] if "image_features" in batch[0] else None
+        cad_stems = [item.get("cad_stem") for item in batch] if "cad_stem" in batch[0] else None
 
         max_length_in_batch = max(len(ids) for ids in input_ids)
 
@@ -413,7 +433,11 @@ class ARData(torch.utils.data.Dataset):
             padded_input_ids.append(padded_ids)
             padded_attention_masks.append(padded_mask)
 
-        return {
+        output = {
             "input_ids": torch.stack(padded_input_ids),
             "attention_mask": torch.stack(padded_attention_masks),
         }
+        if image_features is not None:
+            output["image_features"] = torch.stack(image_features)
+            output["cad_stem"] = cad_stems
+        return output

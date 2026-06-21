@@ -790,6 +790,8 @@ class ARDataPreprocessor:
             if split == 'train':
                 # train saves group format (original + augmented)
                 group = {
+                    'cad_path': path,
+                    'cad_stem': os.path.splitext(os.path.basename(path))[0],
                     'original': None,
                     'augmented': []
                 }
@@ -827,7 +829,12 @@ class ARDataPreprocessor:
                     self.tracer.enabled = False
                     self._trace_done_pending = True
                 item = {'input_ids': tokens, 'attention_mask': attn}
-                group = {'original': item}
+                group = {
+                    'cad_path': path,
+                    'cad_stem': os.path.splitext(os.path.basename(path))[0],
+                    'original': item,
+                    'augmented': []
+                }
                 return group
 
         except Exception as e:
