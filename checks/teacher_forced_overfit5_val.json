@@ -1,0 +1,122 @@
+{
+  "split": "val",
+  "sequence_file": "/workspace/BrepARG_image/data/sequence_overfit_5.pkl",
+  "weight": "/workspace/BrepARG_image/checkpoints/ar_prefix_overfit5/abc_ar_vqvae_best_model.pt",
+  "device": "cuda",
+  "dataset_size": 5,
+  "evaluated_samples": 5,
+  "evaluated_tokens": 8638,
+  "overall": {
+    "loss": 0.0016372548013021614,
+    "perplexity": 1.0016385958347156,
+    "accuracy": 1.0,
+    "top5_accuracy": 1.0
+  },
+  "regions": {
+    "face_accuracy": 1.0,
+    "face_tokens": 2244,
+    "edge_accuracy": 1.0,
+    "edge_tokens": 6384
+  },
+  "length_buckets": {
+    "ge_1536": {
+      "samples": 3,
+      "tokens": 5650,
+      "accuracy": 1.0
+    },
+    "1024_1535": {
+      "samples": 2,
+      "tokens": 2988,
+      "accuracy": 1.0
+    }
+  },
+  "worst_samples": [
+    {
+      "dataset_index": 3,
+      "seq_len": 2093,
+      "accuracy": 1.0,
+      "valid_target_tokens": 2092,
+      "first_error_pos": null,
+      "face_accuracy": 1.0,
+      "edge_accuracy": 1.0,
+      "errors": []
+    },
+    {
+      "dataset_index": 1,
+      "seq_len": 1879,
+      "accuracy": 1.0,
+      "valid_target_tokens": 1878,
+      "first_error_pos": null,
+      "face_accuracy": 1.0,
+      "edge_accuracy": 1.0,
+      "errors": []
+    },
+    {
+      "dataset_index": 0,
+      "seq_len": 1681,
+      "accuracy": 1.0,
+      "valid_target_tokens": 1680,
+      "first_error_pos": null,
+      "face_accuracy": 1.0,
+      "edge_accuracy": 1.0,
+      "errors": []
+    },
+    {
+      "dataset_index": 2,
+      "seq_len": 1501,
+      "accuracy": 1.0,
+      "valid_target_tokens": 1500,
+      "first_error_pos": null,
+      "face_accuracy": 1.0,
+      "edge_accuracy": 1.0,
+      "errors": []
+    },
+    {
+      "dataset_index": 4,
+      "seq_len": 1489,
+      "accuracy": 1.0,
+      "valid_target_tokens": 1488,
+      "first_error_pos": null,
+      "face_accuracy": 1.0,
+      "edge_accuracy": 1.0,
+      "errors": []
+    }
+  ],
+  "best_samples": [
+    {
+      "dataset_index": 3,
+      "seq_len": 2093,
+      "accuracy": 1.0,
+      "valid_target_tokens": 2092,
+      "first_error_pos": null
+    },
+    {
+      "dataset_index": 1,
+      "seq_len": 1879,
+      "accuracy": 1.0,
+      "valid_target_tokens": 1878,
+      "first_error_pos": null
+    },
+    {
+      "dataset_index": 0,
+      "seq_len": 1681,
+      "accuracy": 1.0,
+      "valid_target_tokens": 1680,
+      "first_error_pos": null
+    },
+    {
+      "dataset_index": 2,
+      "seq_len": 1501,
+      "accuracy": 1.0,
+      "valid_target_tokens": 1500,
+      "first_error_pos": null
+    },
+    {
+      "dataset_index": 4,
+      "seq_len": 1489,
+      "accuracy": 1.0,
+      "valid_target_tokens": 1488,
+      "first_error_pos": null
+    }
+  ]
+}

@@ -88,6 +88,7 @@ def get_se_args():
 def get_ar_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--sequence_file', type=str, default='data/deepcad_sequences_v3_no_vertex_v9.2.pkl', help='source file path of AR sequences')
+    parser.add_argument('--image_feature_index_file', type=str, default='', help='Optional pickle index for precomputed image features')
     
     # Training parameters - Optimized parameters
     # Batch size per GPU
@@ -113,6 +114,10 @@ def get_ar_args():
     parser.add_argument('--nhead', type=int, default=8, help='Number of attention heads')
     parser.add_argument('--num_layers', type=int, default=8, help='Number of Transformer layers')
     parser.add_argument('--dim_feedforward', type=int, default=1024, help='Feedforward network dimension')
+    parser.add_argument('--use_image_prefix', action='store_true', help='Enable simple image-prefix conditioning')
+    parser.add_argument('--image_feature_dim', type=int, default=1024, help='Channel dimension of precomputed image features')
+    parser.add_argument('--num_image_prefix_tokens', type=int, default=16, help='Number of prefix tokens produced from image features')
+    parser.add_argument('--debug_one_batch', action='store_true', help='Run only one training batch for forward/backward smoke testing')
     
     # Dataset type parameter
     parser.add_argument('--dataset_type', type=str, choices=['furniture', 'deepcad', 'abc'],

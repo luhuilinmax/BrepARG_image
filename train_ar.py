@@ -47,8 +47,18 @@ def single_gpu_train(args):
         device = torch.device('cpu')
         print("[Warning] No CUDA device detected; training will proceed on CPU.")
 
-    train_dataset = ARData(sequence_file=args.sequence_file, validate=False, args=args)
-    val_dataset = ARData(sequence_file=args.sequence_file, validate=True, args=args)
+    train_dataset = ARData(
+        sequence_file=args.sequence_file,
+        validate=False,
+        args=args,
+        image_feature_index_file=args.image_feature_index_file or None
+    )
+    val_dataset = ARData(
+        sequence_file=args.sequence_file,
+        validate=True,
+        args=args,
+        image_feature_index_file=args.image_feature_index_file or None
+    )
 
     trainer = ARTrainer(train_dataset, val_dataset, args, device=device, multi_gpu=False)
 
@@ -67,8 +77,18 @@ def multi_gpu_train(args, local_rank, world_size, rank):
         print("\n[Mode] DDP Multi-GPU Distributed Training")
         print(f"Cluster info: World Size = {world_size} processes")
 
-    train_dataset = ARData(sequence_file=args.sequence_file, validate=False, args=args)
-    val_dataset = ARData(sequence_file=args.sequence_file, validate=True, args=args)
+    train_dataset = ARData(
+        sequence_file=args.sequence_file,
+        validate=False,
+        args=args,
+        image_feature_index_file=args.image_feature_index_file or None
+    )
+    val_dataset = ARData(
+        sequence_file=args.sequence_file,
+        validate=True,
+        args=args,
+        image_feature_index_file=args.image_feature_index_file or None
+    )
     # ARTrainer should internally handle DDP model wrapping
     trainer = ARTrainer(train_dataset, val_dataset, args, device=device, multi_gpu=True)
     trainer.train()

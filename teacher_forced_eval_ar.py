@@ -62,6 +62,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Strict teacher-forced evaluation for AR model")
     parser.add_argument("--sequence_file", type=str, required=True, help="Grouped AR sequence pkl")
     parser.add_argument("--weight", type=str, required=True, help="AR checkpoint path")
+    parser.add_argument("--image_feature_index_file", type=str, default="", help="Optional image feature index for prefix-conditioned AR")
     parser.add_argument("--split", type=str, choices=["train", "val"], default="val")
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--max_seq_len", type=int, default=2048)
@@ -101,6 +102,16 @@ def choose_device(device_arg: str) -> torch.device:
 
 def build_model_from_checkpoint(checkpoint: Dict[str, Any], dataset: ARData, device: torch.device) -> ARModel:
     config_dict = checkpoint.get("config", {}) or {}
+    state_dict = checkpoint.get("model_state_dict", {}) or {}
+    wpe_len = None
+    for key in ('model.transformer.wpe.weight', 'transformer.wpe.weight', 'module.model.transformer.wpe.weight', 'module.transformer.wpe.weight'):
+        if key in state_dict:
+            wpe_len = int(state_dict[key].shape[0])
+            break
+    max_seq_len = dataset.max_seq_len
+    if wpe_len is None:
+        wpe_len = config_dict.get("n_positions", max_seq_len)
+    num_image_prefix_tokens = max(0, wpe_len - max_seq_len)
     model = ARModel(
         vocab_size=dataset.vocab_size,
         d_model=config_dict.get("n_embd", 256),
@@ -108,8 +119,11 @@ def build_model_from_checkpoint(checkpoint: Dict[str, Any], dataset: ARData, dev
         num_layers=config_dict.get("n_layer", 8),
         dim_feedforward=config_dict.get("n_inner", 1024),
         dropout=0.0,
-        max_seq_len=config_dict.get("n_positions", dataset.max_seq_len),
+        max_seq_len=max_seq_len,
         pad_token_id=dataset.PAD_TOKEN,
+        use_image_prefix=num_image_prefix_tokens > 0,
+        image_feature_dim=1024,
+        num_image_prefix_tokens=num_image_prefix_tokens,
     ).to(device)
     load_model_weights(model, checkpoint)
     model.eval()
@@ -159,7 +173,12 @@ def main() -> None:
     print(f"Using device: {device}")
 
     validate = args.split == "val"
-    base_dataset = ARData(sequence_file=args.sequence_file, validate=validate, args=args)
+    base_dataset = ARData(
+        sequence_file=args.sequence_file,
+        validate=validate,
+        args=args,
+        image_feature_index_file=args.image_feature_index_file or None,
+    )
     dataset = EvalDataset(base_dataset)
     dataloader = DataLoader(
         dataset,
@@ -195,8 +214,13 @@ def main() -> None:
             dataset_indices = batch["dataset_index"].tolist()
             seq_lens = batch["seq_len"].tolist()
 
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            logits = outputs.logits[:, :-1, :]
+            image_features = batch.get("image_features")
+            if image_features is not None:
+                image_features = image_features.to(device)
+
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, image_features=image_features)
+            prefix_len = outputs.logits.shape[1] - input_ids.shape[1]
+            logits = outputs.logits[:, prefix_len:-1, :]
             targets = input_ids[:, 1:]
             target_mask = attention_mask[:, 1:].bool() & (targets != base_dataset.PAD_TOKEN)
 

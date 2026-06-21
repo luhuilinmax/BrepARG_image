@@ -1,0 +1,29 @@
+{
+  "cad_stem": "00387821_fe7376ac8dcc8bbc715c8909_step_000",
+  "sample_index": 0,
+  "split": "val",
+  "target_len": 1681,
+  "generated_len": 1680,
+  "target": {
+    "sequence_len": 1681,
+    "sequence_path": "/workspace/BrepARG_image/checks/reconstruct_compare_sample0/target_sequence.json",
+    "brep": {
+      "step_path": "/workspace/BrepARG_image/checks/reconstruct_compare_sample0/target.step",
+      "stl_path": "/workspace/BrepARG_image/checks/reconstruct_compare_sample0/target.stl",
+      "brep_valid": true
+    },
+    "error": null,
+    "debug_path": "/workspace/BrepARG_image/checks/reconstruct_compare_sample0/target_brep_debug.pkl"
+  },
+  "generated": {
+    "sequence_len": 1680,
+    "sequence_path": "/workspace/BrepARG_image/checks/reconstruct_compare_sample0/generated_sequence.json",
+    "brep": {
+      "step_path": "/workspace/BrepARG_image/checks/reconstruct_compare_sample0/generated.step",
+      "stl_path": "/workspace/BrepARG_image/checks/reconstruct_compare_sample0/generated.stl",
+      "brep_valid": true
+    },
+    "error": null,
+    "debug_path": "/workspace/BrepARG_image/checks/reconstruct_compare_sample0/generated_brep_debug.pkl"
+  }
+}

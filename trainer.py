@@ -688,6 +688,10 @@ class ARTrainer:
         self.nhead = args.nhead
         self.num_layers = args.num_layers
         self.dim_feedforward = args.dim_feedforward
+        self.use_image_prefix = getattr(args, 'use_image_prefix', False)
+        self.image_feature_dim = getattr(args, 'image_feature_dim', 1024)
+        self.num_image_prefix_tokens = getattr(args, 'num_image_prefix_tokens', 0)
+        self.debug_one_batch = getattr(args, 'debug_one_batch', False)
 
         # === Get token configuration from dataset ===
         self.vocab_size = train_dataset.vocab_size
@@ -800,7 +804,10 @@ class ARTrainer:
             dim_feedforward=self.dim_feedforward,
             dropout=self.dropout,
             max_seq_len=self.max_seq_len,
-            pad_token_id=self.PAD_TOKEN
+            pad_token_id=self.PAD_TOKEN,
+            use_image_prefix=self.use_image_prefix,
+            image_feature_dim=self.image_feature_dim,
+            num_image_prefix_tokens=self.num_image_prefix_tokens
         ).to(self.device)
 
         # Only wrap when DDP is initialized externally; do not initialize process group here & do not use DataParallel
@@ -904,9 +911,15 @@ class ARTrainer:
             if self.multi_gpu and torch.cuda.is_available():
                 input_ids = batch['input_ids'].to(self.device, non_blocking=True)
                 attention_mask = batch['attention_mask'].to(self.device, non_blocking=True)
+                image_features = batch.get('image_features')
+                if image_features is not None:
+                    image_features = image_features.to(self.device, non_blocking=True)
             else:
                 input_ids = batch['input_ids'].to(self.device)
                 attention_mask = batch['attention_mask'].to(self.device)
+                image_features = batch.get('image_features')
+                if image_features is not None:
+                    image_features = image_features.to(self.device)
 
             self.optimizer.zero_grad(set_to_none=True)
 
@@ -914,10 +927,19 @@ class ARTrainer:
                 labels = input_ids.clone()
                 labels[labels == self.PAD_TOKEN] = -100
 
+                if self.debug_one_batch and self.rank == 0 and self.global_step == 0:
+                    print('Debug batch shapes:')
+                    print(f'  input_ids: {tuple(input_ids.shape)} {input_ids.dtype} {input_ids.device}')
+                    print(f'  attention_mask: {tuple(attention_mask.shape)} {attention_mask.dtype} {attention_mask.device}')
+                    print(f'  labels: {tuple(labels.shape)} {labels.dtype} {labels.device}')
+                    if image_features is not None:
+                        print(f'  image_features: {tuple(image_features.shape)} {image_features.dtype} {image_features.device}')
+
                 outputs = self.model(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
-                    labels=labels
+                    labels=labels,
+                    image_features=image_features
                 )
                 ce_loss = outputs.loss  # Already mean over tokens-of-batch (HF default)
                 
@@ -947,6 +969,11 @@ class ARTrainer:
                     'LR': f'{self.optimizer.param_groups[0]["lr"]:.2e}'
                 })
 
+            if self.debug_one_batch:
+                if self.rank == 0:
+                    print('Debug one-batch mode: completed single forward/backward/optimizer step.')
+                break
+
         # ---- Calculate global average loss and write to TB ----
         global_loss_num = self._all_reduce_sum(global_loss_num)
         global_loss_den = self._all_reduce_sum(global_loss_den.clamp(min=1.0))
@@ -972,9 +999,15 @@ class ARTrainer:
                 if self.multi_gpu and torch.cuda.is_available():
                     input_ids = batch['input_ids'].to(self.device, non_blocking=True)
                     attention_mask = batch['attention_mask'].to(self.device, non_blocking=True)
+                    image_features = batch.get('image_features')
+                    if image_features is not None:
+                        image_features = image_features.to(self.device, non_blocking=True)
                 else:
                     input_ids = batch['input_ids'].to(self.device)
                     attention_mask = batch['attention_mask'].to(self.device)
+                    image_features = batch.get('image_features')
+                    if image_features is not None:
+                        image_features = image_features.to(self.device)
 
                 with torch.cuda.amp.autocast(enabled=self.amp_enabled):
                     labels = input_ids.clone()
@@ -983,7 +1016,8 @@ class ARTrainer:
                     outputs = self.model(
                         input_ids=input_ids,
                         attention_mask=attention_mask,
-                        labels=labels
+                        labels=labels,
+                        image_features=image_features
                     )
                     ce_loss = outputs.loss
                     if ce_loss is None:
